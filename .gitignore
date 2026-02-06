@@ -1,0 +1,28 @@
+# data and output dir
+test_data/
+output/
+ref/
+
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# environment
+.env
+.venv/
+env/
+venv/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# CLI
+.claude/
+
+# system documents
+.DS_Store
+Thumbs.db
