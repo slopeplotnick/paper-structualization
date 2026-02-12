@@ -3,6 +3,7 @@ test_data/
 output/
 ref/
 *.zip
+openalex_rs/
 
 # Python cache
 __pycache__/

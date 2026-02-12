@@ -21,7 +21,7 @@ from prompts import (
 # API Configuration
 API_BASE_URL = "https://api.chatanywhere.tech/v1"
 API_KEY = "sk-T6nHXyN9FaRD2hCGdEPUMXsVpo1PVPUe7u6bKg1288HOzh70"
-MODEL = "gpt-5"
+MODEL = "gemini-2.5-pro"
 
 # Initialize OpenAI client
 client = OpenAI(
@@ -48,7 +48,14 @@ def call_llm(prompt: str, max_tokens: int = 2000) -> str:
             max_tokens=max_tokens,
             temperature=0.1
         )
-        return response.choices[0].message.content.strip()
+        # Debug: print full response
+        print(f"  [DEBUG] API response object: {response}")
+
+        content = response.choices[0].message.content
+        if content is None:
+            print(f"  [DEBUG] Warning: content is None")
+            return ""
+        return content.strip()
     except Exception as e:
         print(f"API call error: {e}")
         raise
@@ -56,36 +63,33 @@ def call_llm(prompt: str, max_tokens: int = 2000) -> str:
 
 def classify_paper_type(content: str) -> str:
     """Classify paper into one of 6 types"""
-    # Truncate content if too long
-    max_content_length = 15000
-    truncated_content = content[:max_content_length] if len(content) > max_content_length else content
+    prompt = CLASSIFY_PAPER_TYPE_PROMPT.format(paper_content=content)
+    result = call_llm(prompt, max_tokens=16000)
 
-    prompt = CLASSIFY_PAPER_TYPE_PROMPT.format(paper_content=truncated_content)
-    result = call_llm(prompt, max_tokens=50)
+    print(f"  [DEBUG] Raw classification response: '{result}'")
 
     # Validate result
     valid_types = ["reduced_form", "structural", "pure_theory", "experimental", "econometric", "descriptive"]
-    result = result.lower().strip()
+    result_lower = result.lower().strip()
 
-    if result not in valid_types:
-        # Try to find a match
-        for t in valid_types:
-            if t in result:
-                return t
-        # Default to descriptive if can't classify
-        print(f"Warning: Could not classify paper type. Got: {result}. Defaulting to 'descriptive'")
-        return "descriptive"
+    # Direct match
+    if result_lower in valid_types:
+        return result_lower
 
-    return result
+    # Try to find a match in the response
+    for t in valid_types:
+        if t in result_lower:
+            return t
+
+    # Default to descriptive if can't classify
+    print(f"Warning: Could not classify paper type. Got: '{result}'. Defaulting to 'descriptive'")
+    return "descriptive"
 
 
 def extract_layer1(content: str) -> dict:
     """Extract Layer 1 (universal core) structure"""
-    max_content_length = 15000
-    truncated_content = content[:max_content_length] if len(content) > max_content_length else content
-
-    prompt = EXTRACT_LAYER1_PROMPT.format(paper_content=truncated_content)
-    result = call_llm(prompt, max_tokens=1500)
+    prompt = EXTRACT_LAYER1_PROMPT.format(paper_content=content)
+    result = call_llm(prompt, max_tokens=16000)
 
     # Parse JSON response
     try:
@@ -112,15 +116,12 @@ def extract_layer1(content: str) -> dict:
 
 def extract_layer2(content: str, paper_type: str) -> dict:
     """Extract Layer 2 (methodology-specific) structure"""
-    max_content_length = 15000
-    truncated_content = content[:max_content_length] if len(content) > max_content_length else content
-
     prompt_template = EXTRACT_LAYER2_PROMPTS.get(paper_type)
     if not prompt_template:
         return {"error": f"Unknown paper type: {paper_type}"}
 
-    prompt = prompt_template.format(paper_content=truncated_content)
-    result = call_llm(prompt, max_tokens=1500)
+    prompt = prompt_template.format(paper_content=content)
+    result = call_llm(prompt, max_tokens=16000)
 
     # Parse JSON response
     try:
@@ -199,7 +200,7 @@ def save_outputs(result: dict, paper_id: str, output_dir: str):
 
 def process_paper(paper_path: str, output_dir: str) -> dict:
     """Process a single paper"""
-    paper_id = Path(paper_path).stem
+    paper_id = Path(paper_path).parent.name
     print(f"\n{'='*50}")
     print(f"Processing: {paper_id}")
     print(f"{'='*50}")
@@ -240,12 +241,9 @@ def process_paper(paper_path: str, output_dir: str) -> dict:
 
 def batch_process(input_dir: str, output_dir: str):
     """Batch process all papers in input directory"""
-    # Find all .md files
-    pattern = os.path.join(input_dir, "**", "*.md")
-    paper_files = glob.glob(pattern, recursive=True)
-
-    # Filter out non-paper files (keep only files that match paper ID pattern)
-    paper_files = [f for f in paper_files if Path(f).stem.startswith("W")]
+    # Find all full.md files in subdirectories
+    pattern = os.path.join(input_dir, "*", "full.md")
+    paper_files = glob.glob(pattern)
 
     print(f"Found {len(paper_files)} papers to process")
 
@@ -278,7 +276,7 @@ def main():
     script_dir = Path(__file__).parent
 
     # Set paths
-    input_dir = script_dir / "test_data" / "S987654"
+    input_dir = script_dir / "test_data"
     output_dir = script_dir / "output"
 
     print("="*60)
